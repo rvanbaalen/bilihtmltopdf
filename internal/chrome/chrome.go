@@ -156,6 +156,10 @@ func systemChromePaths() []string {
 			"chromium",
 			"chromium-browser",
 			"microsoft-edge",
+			// Snap installs live outside the minimal PATH that service
+			// managers give web-server processes (php-fpm et al.).
+			"/snap/bin/chromium",
+			"/snap/bin/chromium-browser",
 		}
 	}
 }
