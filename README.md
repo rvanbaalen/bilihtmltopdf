@@ -35,6 +35,19 @@ browser rendering without rewriting what already works.
 
 ## Install
 
+**Interactive installer (Linux, macOS):**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/rvanbaalen/bilihtmltopdf/main/setup.sh | bash
+```
+
+It detects your platform, explains every step, and asks before doing
+anything — including backing up an existing `wkhtmltopdf` binary as
+`wkhtmltopdf.orig` for easy rollback. Non-interactive: prefix with
+`BILI_YES=1`.
+
+**Manual options:**
+
 Every release on [GitHub Releases](https://github.com/rvanbaalen/bilihtmltopdf/releases)
 bundles a matching [`chrome-headless-shell`](https://googlechromelabs.github.io/chrome-for-testing/)
 so the tool works offline with no system browser — like the original
