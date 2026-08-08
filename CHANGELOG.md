@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0](https://github.com/rvanbaalen/bilihtmltopdf/compare/v0.2.0...v0.3.0) (2026-08-08)
+
+
+### Features
+
+* interactive curl-pipe installer (setup.sh) ([5e6ef01](https://github.com/rvanbaalen/bilihtmltopdf/commit/5e6ef01b927b3f9c08445b1a2bfde31c7be3a45a))
+
+
+### Bug Fixes
+
+* detect missing renderer libraries with ldd instead of guessing ([cd26ad1](https://github.com/rvanbaalen/bilihtmltopdf/commit/cd26ad19065325255ebab65636458874e58b3693))
+
 ## [0.2.0](https://github.com/rvanbaalen/bilihtmltopdf/compare/v0.1.1...v0.2.0) (2026-08-08)
 
 
