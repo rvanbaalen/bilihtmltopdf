@@ -2,9 +2,10 @@
 #
 # Archives and linux packages bundle the matching chrome-headless-shell
 # (fetched by scripts/fetch-headless-shell.sh into third_party/) so the
-# installed binary renders offline with no system Chrome. Platforms with
-# no upstream headless-shell build (linux/arm64, windows/arm64) ship the
-# binary plus a NOTICE and fall back to a system Chrome/Chromium/Edge.
+# installed binary renders offline with no system Chrome. linux/arm64
+# bundles Playwright's Chromium headless-shell build (Google publishes
+# none); windows/arm64 ships the binary plus a NOTICE and falls back to
+# a system Chrome/Chromium/Edge.
 #
 # Dry run: make release-dry (goreleaser release --snapshot --clean)
 

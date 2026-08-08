@@ -27,14 +27,28 @@ need python3
 need unzip
 
 # goos_goarch:cft-platform; empty cft-platform = no upstream build.
+# linux_arm64 has no Chrome-for-Testing build; it is fetched from the
+# Playwright CDN instead (see below).
 ALL_PLATFORMS=(
   linux_amd64:linux64
   darwin_amd64:mac-x64
   darwin_arm64:mac-arm64
   windows_amd64:win64
-  linux_arm64:
+  linux_arm64:playwright
   windows_arm64:
 )
+
+# Playwright's Chromium build revision for linux_arm64. Pin via
+# PLAYWRIGHT_CHROMIUM_REVISION; else resolve from playwright main.
+PW_BASE="https://playwright.azureedge.net/builds/chromium"
+resolve_pw_revision() {
+  if [[ -n "${PLAYWRIGHT_CHROMIUM_REVISION:-}" ]]; then
+    echo "$PLAYWRIGHT_CHROMIUM_REVISION"
+    return
+  fi
+  curl -fsSL "https://raw.githubusercontent.com/microsoft/playwright/main/packages/playwright-core/browsers.json" |
+    python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(b["revision"] for b in d["browsers"] if b["name"]=="chromium-headless-shell"))'
+}
 
 # Resolve the version to fetch: pinned via CHROME_VERSION, else Stable.
 if [[ -n "${CHROME_VERSION:-}" ]]; then
@@ -61,6 +75,29 @@ for entry in "${ALL_PLATFORMS[@]}"; do
 
   dest="$DEST_ROOT/$target"
   shell_dir="$dest/lib/chrome-headless-shell"
+
+  if [[ "$cft" == "playwright" ]]; then
+    rev="$(resolve_pw_revision)"
+    stamp="$dest/.version"
+    if [[ -f "$stamp" && "$(cat "$stamp")" == "pw-$rev" ]]; then
+      echo "- $target: already at playwright rev $rev, skipping"
+      continue
+    fi
+    echo "- $target: downloading playwright chromium-headless-shell rev $rev"
+    tmp="$(mktemp -d)"
+    curl -fSL --progress-bar -o "$tmp/shell.zip" \
+      "$PW_BASE/$rev/chromium-headless-shell-linux-arm64.zip"
+    unzip -q "$tmp/shell.zip" -d "$tmp"
+    rm -rf "$shell_dir"
+    mkdir -p "$(dirname "$shell_dir")"
+    mv "$tmp/chrome-linux" "$shell_dir"
+    # FindChrome expects the binary to be named chrome-headless-shell.
+    mv "$shell_dir/headless_shell" "$shell_dir/chrome-headless-shell"
+    chmod +x "$shell_dir/chrome-headless-shell"
+    echo "pw-$rev" >"$stamp"
+    rm -rf "$tmp"
+    continue
+  fi
 
   if [[ -z "$cft" ]]; then
     mkdir -p "$shell_dir"

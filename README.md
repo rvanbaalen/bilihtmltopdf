@@ -63,9 +63,10 @@ go install github.com/rvanbaalen/bilihtmltopdf/cmd/wkhtmltopdf@latest
 A source install has no bundled shell; a system Chrome/Chromium/Edge is
 used instead (see discovery order below).
 
-> **linux/arm64 and windows/arm64:** Google publishes no
-> `chrome-headless-shell` for these platforms, so those archives contain the
-> binary only and require a system Chromium (or `WKHTMLTOPDF_CHROME`).
+> **linux/arm64** bundles [Playwright's](https://playwright.dev) Chromium
+> headless-shell build (Google publishes none for that platform) — installs
+> are self-contained there too. Only **windows/arm64** has no bundled
+> renderer and requires a system Chromium (or `WKHTMLTOPDF_CHROME`).
 
 ## Usage
 
@@ -156,6 +157,8 @@ error, exit 1 — same as wkhtmltopdf.
 | `--page-offset` | Cannot shift Chromium page counters; `[page]` starts at 1 (warned). |
 | `--log-level` | Only `none` (= `--quiet`) is distinguished; `error`/`warn`/`info`/`debug` behave like the default. |
 | `--copies` | Stored in metadata terms only; `> 1` produces a single copy with a warning. |
+| SSL certificate errors | Ignored by default, exactly like wkhtmltopdf's Qt loader — self-signed or mismatched certs do not block page or stylesheet loads. Do not point it at untrusted origins. |
+| Chromium sandbox | On systems that restrict unprivileged user namespaces (Ubuntu 23.10+ AppArmor), the render is retried with `--no-sandbox` and a stderr warning. The original wkhtmltopdf was entirely unsandboxed, so this still strictly improves on it elsewhere. |
 
 ### Accepted but warn-ignored (no Chromium equivalent)
 

@@ -187,7 +187,27 @@ func PrintPDF(ctx context.Context, req PrintRequest) ([]byte, error) {
 		literalHTML = string(raw)
 	}
 
-	allocCtx, cancelAlloc := chromedp.NewExecAllocator(ctx, allocatorOptions(req)...)
+	pdf, err := printOnce(ctx, req, target, isStdin, literalHTML, false)
+	if err != nil && isSandboxStartupError(err) {
+		// Ubuntu 23.10+ restricts unprivileged user namespaces via
+		// AppArmor, which kills Chromium's sandbox. The original
+		// wkhtmltopdf ran entirely unsandboxed, so degrading beats
+		// failing — but say so.
+		fmt.Fprintln(os.Stderr, "Warning: Chromium sandbox unavailable "+
+			"(unprivileged user namespaces are restricted on this system); "+
+			"retrying with --no-sandbox. Render only trusted HTML.")
+		pdf, err = printOnce(ctx, req, target, isStdin, literalHTML, true)
+	}
+	return pdf, err
+}
+
+// printOnce runs a single render attempt in a fresh Chromium process.
+func printOnce(ctx context.Context, req PrintRequest, target string, isStdin bool, literalHTML string, noSandbox bool) ([]byte, error) {
+	opts := allocatorOptions(req)
+	if noSandbox {
+		opts = append(opts, chromedp.NoSandbox)
+	}
+	allocCtx, cancelAlloc := chromedp.NewExecAllocator(ctx, opts...)
 	defer cancelAlloc()
 	tabCtx, cancelTab := chromedp.NewContext(allocCtx)
 	defer cancelTab()
@@ -215,6 +235,12 @@ func PrintPDF(ctx context.Context, req PrintRequest) ([]byte, error) {
 	return pdf, nil
 }
 
+// isSandboxStartupError reports whether err is Chromium refusing to start
+// because its sandbox cannot be set up (restricted user namespaces).
+func isSandboxStartupError(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "No usable sandbox")
+}
+
 // allocatorOptions maps the request's process-level settings onto exec
 // allocator flags (headless=new plus image/local-file toggles).
 func allocatorOptions(req PrintRequest) []chromedp.ExecAllocatorOption {
@@ -222,6 +248,10 @@ func allocatorOptions(req PrintRequest) []chromedp.ExecAllocatorOption {
 	opts = append(opts,
 		chromedp.ExecPath(req.ChromePath),
 		chromedp.Flag("headless", "new"),
+		// wkhtmltopdf's Qt loader discarded SSL errors unconditionally;
+		// drop-in behavior means self-signed and mismatched certs must
+		// not silently kill page or stylesheet loads.
+		chromedp.Flag("ignore-certificate-errors", true),
 	)
 	if !req.Page.LoadImages {
 		opts = append(opts, chromedp.Flag("blink-settings", "imagesEnabled=false"))
