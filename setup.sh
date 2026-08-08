@@ -65,12 +65,27 @@ need() { command -v "$1" >/dev/null 2>&1 || die "$1 is required"; }
 need curl
 need tar
 
-VERSION="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" |
-  sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p' | head -1)"
+# Pin a specific version with BILI_VERSION=x.y.z; default is the latest.
+if [[ -n "${BILI_VERSION:-}" ]]; then
+  VERSION="$BILI_VERSION"
+else
+  VERSION="$(curl -fsSL "https://api.github.com/repos/$REPO/releases/latest" |
+    sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p' | head -1)"
+fi
 [[ -n "$VERSION" ]] || die "could not determine the latest release version"
 
 ASSET="bilihtmltopdf_${VERSION}_${GOOS}_${GOARCH}.tar.gz"
 DEST="$INSTALL_ROOT/bilihtmltopdf_${VERSION}_${GOOS}_${GOARCH}"
+ASSET_URL="https://github.com/$REPO/releases/download/v$VERSION/$ASSET"
+
+# A release exists the moment it is tagged, but its artifacts upload a
+# few minutes later; fail that window with a clear message instead of a
+# curl 404 halfway through the install.
+if ! curl -fsIL -o /dev/null "$ASSET_URL"; then
+  die "release v$VERSION exists but $ASSET is not downloadable (yet).
+Artifacts are usually still uploading right after a release — retry in a
+few minutes, or pin the previous version: BILI_VERSION=<x.y.z> $0"
+fi
 
 say "Install plan"
 info "Detected platform : $GOOS/$GOARCH"
@@ -124,8 +139,7 @@ fi
 say "Downloading $ASSET"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
-curl -fL --progress-bar -o "$TMP/$ASSET" \
-  "https://github.com/$REPO/releases/download/v$VERSION/$ASSET"
+curl -fL --progress-bar -o "$TMP/$ASSET" "$ASSET_URL"
 
 say "Installing"
 info "Extracting to $DEST and linking $BIN_LINK"

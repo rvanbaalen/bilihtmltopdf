@@ -44,7 +44,15 @@ curl -fsSL https://raw.githubusercontent.com/rvanbaalen/bilihtmltopdf/main/setup
 It detects your platform, explains every step, and asks before doing
 anything — including backing up an existing `wkhtmltopdf` binary as
 `wkhtmltopdf.orig` for easy rollback. Non-interactive: prefix with
-`BILI_YES=1`.
+`BILI_YES=1`. Pin a version with `BILI_VERSION=x.y.z`; relocate with
+`BILI_INSTALL_ROOT` / `BILI_BIN_LINK`.
+
+**Uninstall** (removes the command and install dirs, restores a
+`wkhtmltopdf.orig` backup when present — same confirmations):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/rvanbaalen/bilihtmltopdf/main/uninstall.sh | bash
+```
 
 **Manual options:**
 
