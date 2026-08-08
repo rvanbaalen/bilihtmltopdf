@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/rvanbaalen/bilihtmltopdf/compare/v0.1.0...v0.1.1) (2026-08-08)
+
+
+### Bug Fixes
+
+* find snap-installed Chromium on Linux ([6736457](https://github.com/rvanbaalen/bilihtmltopdf/commit/67364576384dd8a0a63e61b75b75a9ed80f17d09))
+
 ## 0.1.0 (2026-08-08)
 
 
