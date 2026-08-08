@@ -119,27 +119,7 @@ if [[ -e "$BIN_LINK" || -L "$BIN_LINK" ]]; then
   fi
 fi
 
-# ── 3. optional runtime libraries (Linux) ────────────────────────────
-
-if [[ "$GOOS" == "linux" ]] && command -v apt-get >/dev/null 2>&1; then
-  say "Runtime libraries"
-  info "The bundled headless Chromium needs common desktop libraries"
-  info "(libnss3, libgbm1, fonts, ...). On minimal/server installs they"
-  info "may be missing. This runs: apt-get install -y libnss3 libnspr4"
-  info "libgbm1 libasound2t64 libatk1.0-0t64 libatk-bridge2.0-0t64"
-  info "libcups2t64 libxkbcommon0 libxcomposite1 libxdamage1 libxfixes3"
-  info "libxrandr2 libpango-1.0-0 libcairo2"
-  if confirm "Install these packages with apt-get now?"; then
-    as_root apt-get update
-    as_root apt-get install -y libnss3 libnspr4 libgbm1 libasound2t64 \
-      libatk1.0-0t64 libatk-bridge2.0-0t64 libcups2t64 libxkbcommon0 \
-      libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libpango-1.0-0 libcairo2
-  else
-    info "Skipped. If rendering fails with missing-library errors, install them later."
-  fi
-fi
-
-# ── 4. download and install ──────────────────────────────────────────
+# ── 3. download and install ──────────────────────────────────────────
 
 say "Downloading $ASSET"
 TMP="$(mktemp -d)"
@@ -155,6 +135,40 @@ as_root rm -rf "$DEST"
 as_root tar xzf "$TMP/$ASSET" -C "$INSTALL_ROOT"
 as_root mkdir -p "$(dirname "$BIN_LINK")"
 as_root ln -sf "$DEST/wkhtmltopdf" "$BIN_LINK"
+
+# ── 4. runtime libraries: install only what is actually missing ─────
+# The bundled renderer links against a handful of system libraries
+# (NSS for TLS, GBM, expat, ...). Rather than guessing, ask the linker.
+
+SHELL_BIN="$DEST/lib/chrome-headless-shell/chrome-headless-shell"
+if [[ "$GOOS" == "linux" && -f "$SHELL_BIN" ]] && command -v ldd >/dev/null 2>&1; then
+  MISSING="$(ldd "$SHELL_BIN" 2>/dev/null | awk '/not found/{print $1}' | sort -u || true)"
+  if [[ -n "$MISSING" ]]; then
+    say "Missing runtime libraries"
+    info "The bundled renderer needs system libraries this machine lacks:"
+    while IFS= read -r lib; do info "  - $lib"; done <<<"$MISSING"
+    if command -v apt-get >/dev/null 2>&1; then
+      info "The following usually covers all of them on Debian/Ubuntu:"
+      info "  apt-get install -y libnss3 libnspr4 libgbm1 libexpat1 libxkbcommon0 fontconfig"
+      if confirm "Run that apt-get install now?"; then
+        as_root apt-get update
+        as_root apt-get install -y libnss3 libnspr4 libgbm1 libexpat1 libxkbcommon0 fontconfig
+        MISSING="$(ldd "$SHELL_BIN" 2>/dev/null | awk '/not found/{print $1}' | sort -u || true)"
+        if [[ -n "$MISSING" ]]; then
+          info "Still missing: $(echo "$MISSING" | tr '\n' ' ')"
+          info "Find the package per library with: apt-file search <name> (or packages.ubuntu.com)."
+        fi
+      else
+        info "Skipped. Rendering will fail until these libraries are installed."
+      fi
+    else
+      info "Install them with your distribution's package manager."
+    fi
+  else
+    say "Runtime libraries"
+    info "All libraries the renderer needs are already present — nothing to install."
+  fi
+fi
 
 # ── 5. verify ────────────────────────────────────────────────────────
 
