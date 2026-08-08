@@ -1,0 +1,39 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Modern CSS e2e</title>
+<style>
+  :root { --brand: #0b7a4b; --pad: 16px; }
+
+  /* Layer order: theme wins. Marker text only appears when @layer cascades. */
+  @layer base, theme;
+  @layer base { .layered::after { content: " LAYER-BASE-WRONG"; } }
+  @layer theme { .layered::after { content: " LAYER-CASCADE-OK"; } }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--pad);
+  }
+  .grid > div { background: #eef6f1; padding: var(--pad); border: 1px solid var(--brand); }
+  .gridcheck::after { content: " GRID-NOT-SUPPORTED"; }
+  @supports (display: grid) { .gridcheck::after { content: " GRID-SUPPORTED"; } }
+
+  .card-host { container-type: inline-size; width: 400px; }
+  .card { background: #ddd; padding: 8px; }
+  @container (min-width: 300px) {
+    .card::after { content: " CONTAINER-QUERY-OK"; }
+  }
+
+  .page2 { break-before: page; }
+</style>
+</head>
+<body>
+  <h1 class="layered">Modern CSS rendering test</h1>
+  <div class="grid"><div>grid 1</div><div>grid 2</div><div>grid 3</div></div>
+  <p class="gridcheck">Grid feature check:</p>
+  <div class="card-host"><div class="card">Container query card</div></div>
+  <div class="page2"><h2>PAGE2-MARKER</h2><p>Second page via break-before.</p></div>
+</body>
+</html>

@@ -1,0 +1,100 @@
+# goreleaser configuration for bilihtmltopdf.
+#
+# Archives and linux packages bundle the matching chrome-headless-shell
+# (fetched by scripts/fetch-headless-shell.sh into third_party/) so the
+# installed binary renders offline with no system Chrome. Platforms with
+# no upstream headless-shell build (linux/arm64, windows/arm64) ship the
+# binary plus a NOTICE and fall back to a system Chrome/Chromium/Edge.
+#
+# Dry run: make release-dry (goreleaser release --snapshot --clean)
+
+version: 2
+
+project_name: bilihtmltopdf
+
+before:
+  hooks:
+    - go mod download
+    # Idempotent: skips platforms already at the current Stable version.
+    - ./scripts/fetch-headless-shell.sh
+
+builds:
+  - id: wkhtmltopdf
+    main: ./cmd/wkhtmltopdf
+    binary: wkhtmltopdf
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X github.com/rvanbaalen/bilihtmltopdf/internal/args.Version={{ .Version }}
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    wrap_in_directory: true
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE*
+      - README.md
+      # Bundled renderer; FindChrome looks in lib/chrome-headless-shell/
+      # next to the extracted binary.
+      - src: "third_party/headless-shell/{{ .Os }}_{{ .Arch }}/lib/chrome-headless-shell/**"
+        dst: lib/chrome-headless-shell
+
+nfpms:
+  - id: packages
+    package_name: bilihtmltopdf
+    formats:
+      - deb
+      - rpm
+    bindir: /usr/local/bin
+    vendor: Robin van Baalen
+    homepage: https://github.com/rvanbaalen/bilihtmltopdf
+    maintainer: Robin van Baalen <robin@ganttify.com>
+    description: |-
+      Drop-in replacement for the wkhtmltopdf CLI.
+      Renders HTML to PDF with a bundled headless Chromium
+      (chrome-headless-shell) instead of the archived Qt WebKit engine,
+      adding modern CSS support while keeping the wkhtmltopdf command line.
+    license: LGPL-3.0-or-later
+    # The binary answers to `wkhtmltopdf`; keep the original package out.
+    provides:
+      - wkhtmltopdf
+    conflicts:
+      - wkhtmltopdf
+    contents:
+      # FindChrome's package-layout lookup: <bindir>/../lib/chrome-headless-shell.
+      - src: "third_party/headless-shell/linux_{{ .Arch }}/lib/chrome-headless-shell"
+        dst: /usr/local/lib/chrome-headless-shell
+        type: tree
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot-{{ .ShortCommit }}"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+# release-please owns tags and release notes; goreleaser only attaches
+# artifacts to the release that release-please already created.
+release:
+  github:
+    owner: rvanbaalen
+    name: bilihtmltopdf
+  mode: keep-existing

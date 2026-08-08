@@ -1,0 +1,13 @@
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Delayed content</title></head>
+<body>
+  <h1>STATIC-MARKER</h1>
+  <div id="late"></div>
+  <script>
+    setTimeout(function () {
+      document.getElementById('late').textContent = 'DELAYED-CONTENT-MARKER';
+    }, 500);
+  </script>
+</body>
+</html>
