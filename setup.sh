@@ -96,8 +96,19 @@ if [[ "$DL_BYTES" =~ ^[0-9]+$ ]]; then
   DL_SIZE="$(( (DL_BYTES + 524288) / 1048576 )) MB compressed"
 fi
 
+# Detect an existing install up front so the plan can reflect it.
+CURRENT_VERSION=""
+if [[ -e "$BIN_LINK" || -L "$BIN_LINK" ]]; then
+  CURRENT_VERSION="$("$BIN_LINK" --version 2>/dev/null | head -1 || true)"
+fi
+
 say "Install plan"
 info "Detected platform : $GOOS/$GOARCH"
+if [[ "$CURRENT_VERSION" == "bilihtmltopdf $VERSION" ]]; then
+  info "Currently installed: $CURRENT_VERSION (same version — nothing to change unless you reinstall)"
+elif [[ -n "$CURRENT_VERSION" ]]; then
+  info "Currently installed: $CURRENT_VERSION"
+fi
 info "Version to install: $VERSION"
 info "Download          : https://github.com/$REPO/releases/download/v$VERSION/$ASSET"
 info "Download size     : $DL_SIZE"
@@ -130,12 +141,27 @@ fi
 
 if [[ -e "$BIN_LINK" || -L "$BIN_LINK" ]]; then
   say "Existing wkhtmltopdf found at $BIN_LINK"
-  CURRENT_VERSION="$("$BIN_LINK" --version 2>/dev/null | head -1 || true)"
   info "Current version reports: ${CURRENT_VERSION:-unknown}"
   if [[ "$CURRENT_VERSION" == bilihtmltopdf* ]]; then
-    info "That is a previous bilihtmltopdf install; it will be replaced."
-    confirm "Replace it with $VERSION?" || { info "aborted, nothing changed."; exit 0; }
+    CUR_VER="${CURRENT_VERSION#bilihtmltopdf }"
+    if [[ "$CUR_VER" == "$VERSION" ]]; then
+      info "bilihtmltopdf $VERSION is already installed."
+      if ! confirm "Reinstall the same version (repair/redownload)?"; then
+        info "Already up to date. Nothing to do."
+        exit 0
+      fi
+    else
+      info "Upgrading from $CUR_VER to $VERSION; the previous install is replaced."
+      confirm "Proceed with the upgrade?" || { info "aborted, nothing changed."; exit 0; }
+    fi
     as_root rm -f "$BIN_LINK"
+    # Drop the old versioned install dir if it differs from the target.
+    OLD_DEST="$INSTALL_ROOT/bilihtmltopdf_${CUR_VER}_${GOOS}_${GOARCH}"
+    if [[ "$OLD_DEST" != "$DEST" && -d "$OLD_DEST" ]]; then
+      if confirm "Remove the old install directory $OLD_DEST?"; then
+        as_root rm -rf "$OLD_DEST"
+      fi
+    fi
   else
     info "It will be renamed to wkhtmltopdf.orig so you can roll back with:"
     info "  sudo rm $BIN_LINK && sudo mv $BIN_LINK.orig $BIN_LINK"
