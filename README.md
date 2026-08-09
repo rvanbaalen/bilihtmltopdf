@@ -160,7 +160,7 @@ error, exit 1 — same as wkhtmltopdf.
 | Styling | `--user-style-sheet` |
 | Network | `--cookie` `--custom-header` `--custom-header-propagation` `--username` `--password` |
 | Local files | `--enable-local-file-access`/`--disable-local-file-access` (blocked by default, like 0.12.6) `--allow` |
-| Headers/footers | `--header-left/center/right` `--footer-*` `--*-font-name/size` `--*-line` `--*-spacing` `--*-html` `--default-header` `--replace`, with `[page]` `[topage]` `[title]` `[date]` `[webpage]` `[url]` substitution |
+| Headers/footers | `--header-left/center/right` `--footer-*` `--*-font-name/size` `--*-line` `--*-spacing` `--*-html` `--default-header` `--replace`, with `[page]` `[topage]` `[frompage]` `[title]` `[date]` substitution. Like wkhtmltopdf, each header/footer is rendered as a full page (its own stylesheets, including `<base href>` ones, load normally) and composited over the content — so page numbers run **continuously** across `cover`/`toc`/`page` objects, and `--header-html`/`--footer-html` render with their real CSS and layout. |
 | Objects | multiple `page` inputs, `cover`, `toc`, stdin `-`, stdout `-` |
 | Outline/TOC | `--outline`/`--no-outline` `--outline-depth` `--include-in-outline`/`--exclude-from-outline` `--toc-header-text` `--toc-level-indentation` `--toc-text-size-shrink` `--disable-dotted-lines` `--disable-toc-links` `--dump-default-toc-xsl` |
 | Misc | `--title` `-q`/`--quiet` `--log-level none` `--help` `--extended-help` `--version` `--license` |
@@ -171,7 +171,6 @@ error, exit 1 — same as wkhtmltopdf.
 | --- | --- |
 | media type default | Defaults to **screen** emulation to match wkhtmltopdf. Chrome-era tooling (Puppeteer, `--headless=new --print-to-pdf`) defaults to *print* media, so templates written for those need an explicit `--print-media-type`. Conversely, wkhtmltopdf templates that carry `@media print` rules will now see them honored properly under `--print-media-type`. |
 | `--xsl-style-sheet` | Ignored with a warning (no XSLT engine in Chromium). The built-in TOC style approximates wkhtmltopdf's default XSLT output; `--dump-default-toc-xsl` still prints the reference stylesheet. |
-| `[page]`/`[topage]` across objects | With multiple input documents, page numbers restart at 1 per document (each object is a separate Chromium print job, merged afterwards). wkhtmltopdf numbered continuously. Warned when it applies; pre-merge into one HTML document when continuous numbering matters. |
 | `[section]`/`[subsection]`/`[sitepage]`/`[sitepages]` | No Chromium counterpart; substitute to empty text (warned). |
 | `--owner-password`/`--user-password` | Output is encrypted with AES-256 via pdfcpu instead of wkhtmltopdf's RC4-40 (strictly better; very old PDF viewers may not open it). |
 | `--encoding` | Accepted but has no effect: Chromium offers no fallback-encoding override; undeclared pages decode as UTF-8. Declare the charset in the document or HTTP header. |

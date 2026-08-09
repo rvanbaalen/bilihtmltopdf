@@ -58,7 +58,6 @@ func TestBuildPrintParams(t *testing.T) {
 		MarginLeft:      0.7,
 		MarginRight:     0.8,
 		Scale:           1.3,
-		FooterTemplate:  `<div class="pageNumber"></div>`,
 		PrintBackground: true,
 		GenerateOutline: true,
 		PageRanges:      "2-4",
@@ -80,24 +79,10 @@ func TestBuildPrintParams(t *testing.T) {
 	if p.PageRanges != "2-4" {
 		t.Errorf("pageRanges = %q, want 2-4", p.PageRanges)
 	}
-	if !p.DisplayHeaderFooter {
-		t.Error("footer set but DisplayHeaderFooter false")
-	}
-	if p.FooterTemplate != req.FooterTemplate {
-		t.Errorf("footer = %q", p.FooterTemplate)
-	}
-	if p.HeaderTemplate != "<span></span>" {
-		t.Errorf("empty header should be blanked, got %q", p.HeaderTemplate)
-	}
-}
-
-func TestBuildPrintParamsNoHeaderFooter(t *testing.T) {
-	p := buildPrintParams(PrintRequest{PaperWidth: 8.5, PaperHeight: 11})
+	// Headers/footers are composited by the caller, never via CDP
+	// templates, so DisplayHeaderFooter must stay off.
 	if p.DisplayHeaderFooter {
-		t.Error("DisplayHeaderFooter true without templates")
-	}
-	if p.HeaderTemplate != "" || p.FooterTemplate != "" {
-		t.Errorf("templates set without input: %q / %q", p.HeaderTemplate, p.FooterTemplate)
+		t.Error("DisplayHeaderFooter must be false; headers/footers are composited")
 	}
 }
 
@@ -260,7 +245,6 @@ func TestPrintPDFIntegration(t *testing.T) {
 		MarginLeft:      0.4,
 		MarginRight:     0.4,
 		Scale:           1.0,
-		HeaderTemplate:  `<div style="font-size:9px;width:100%;text-align:center;">Page <span class="pageNumber"></span> of <span class="totalPages"></span></div>`,
 		PrintBackground: true,
 		GenerateOutline: true,
 	})

@@ -59,10 +59,6 @@ type PrintRequest struct {
 	MarginRight float64
 	// Scale is the CDP scale factor (from --zoom).
 	Scale float64
-	// HeaderTemplate is the CDP header HTML; empty for none.
-	HeaderTemplate string
-	// FooterTemplate is the CDP footer HTML; empty for none.
-	FooterTemplate string
 	// PrintBackground prints CSS backgrounds.
 	PrintBackground bool
 	// GenerateOutline embeds a document outline (CDP
@@ -349,26 +345,10 @@ func buildPrintParams(req PrintRequest) *page.PrintToPDFParams {
 	if req.Scale > 0 {
 		p = p.WithScale(req.Scale)
 	}
-	if req.HeaderTemplate != "" || req.FooterTemplate != "" {
-		// Chrome substitutes its own date/title template for an empty
-		// string, so blank the unused side explicitly.
-		p = p.WithDisplayHeaderFooter(true).
-			WithHeaderTemplate(orBlankTemplate(req.HeaderTemplate)).
-			WithFooterTemplate(orBlankTemplate(req.FooterTemplate))
-	}
 	if req.PageRanges != "" {
 		p = p.WithPageRanges(req.PageRanges)
 	}
 	return p
-}
-
-// orBlankTemplate substitutes an explicit empty template for "" so
-// Chrome does not render its default header/footer.
-func orBlankTemplate(tpl string) string {
-	if tpl == "" {
-		return "<span></span>"
-	}
-	return tpl
 }
 
 // navigationTarget classifies an input as stdin ("-") or a navigable

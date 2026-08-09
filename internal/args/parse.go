@@ -327,7 +327,7 @@ var specs = map[string]flagSpec{
 	"no-pdf-compression":   warnOnly(0),
 	"image-quality":        warnOnly(1),
 	"image-dpi":            warnOnly(1),
-	"dump-outline": warnOnly(1),
+	"dump-outline":         warnOnly(1),
 
 	// ── page, supported ──
 	"background":                   pgBool(func(o *PageOptions, v bool) { o.Background = v }, true),

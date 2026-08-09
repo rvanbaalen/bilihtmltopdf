@@ -352,19 +352,31 @@ func TestLocalFileAccessBlocking(t *testing.T) {
 	}
 }
 
-// TestMultiObjectPageNumberWarning asserts the per-object numbering
-// caveat is surfaced when [page]/[topage] meet multiple inputs.
-func TestMultiObjectPageNumberWarning(t *testing.T) {
-	out := filepath.Join(t.TempDir(), "multiwarn.pdf")
-	stderr := convert(t, "--footer-right", "[page]/[topage]",
+// TestMultiObjectContinuousNumbering asserts header/footer page numbers run
+// continuously across multiple input documents (as wkhtmltopdf did), since
+// headers/footers are composited onto the merged document rather than
+// stamped per object.
+func TestMultiObjectContinuousNumbering(t *testing.T) {
+	out := filepath.Join(t.TempDir(), "multi.pdf")
+	stderr := convert(t, "-q", "--footer-center", "[page]/[topage]",
 		fixture(t, "ch1.html"), fixture(t, "ch2.html"), out)
-	wantContains(t, "stderr", stderr, "restart at 1")
-
-	// Single input: no such warning.
-	out2 := filepath.Join(t.TempDir(), "single.pdf")
-	stderr = convert(t, "--footer-right", "[page]/[topage]", fixture(t, "ch1.html"), out2)
 	if strings.Contains(stderr, "restart at 1") {
-		t.Errorf("single-object render must not warn about numbering:\n%s", stderr)
+		t.Errorf("composited numbering must not warn about restarting:\n%s", stderr)
+	}
+	n := pageCount(t, out)
+	if n < 2 {
+		t.Fatalf("expected at least 2 pages across two inputs, got %d", n)
+	}
+	// Last page must read "N/N" — proof numbering is continuous and the
+	// total spans both documents.
+	last := pageText(t, out, n)
+	want := fmt.Sprintf("%d/%d", n, n)
+	if !strings.Contains(last, want) {
+		t.Errorf("last page footer = %q, want %q", last, want)
+	}
+	// First page must read "1/N", not "1/1".
+	if first := pageText(t, out, 1); !strings.Contains(first, fmt.Sprintf("1/%d", n)) {
+		t.Errorf("first page footer = %q, want 1/%d", first, n)
 	}
 }
 

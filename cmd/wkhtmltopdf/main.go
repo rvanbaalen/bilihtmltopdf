@@ -8,7 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"regexp"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -116,16 +116,6 @@ func pipeline(ctx context.Context, cmd *args.Command, rep *reporter) error {
 		return err
 	}
 
-	// CDP evaluates [page]/[topage] per printToPDF call, so numbering
-	// restarts for every object; wkhtmltopdf numbered continuously.
-	if len(cmd.Objects) > 1 && usesPageNumbering(cmd.Objects) {
-		if err := rep.warn("with multiple input documents, header/footer page numbers " +
-			"([page]/[topage]/[frompage]) restart at 1 for each document; " +
-			"wkhtmltopdf numbered pages continuously across documents"); err != nil {
-			return err
-		}
-	}
-
 	hasTOC := false
 	for _, obj := range cmd.Objects {
 		if obj.Kind() == "toc" {
@@ -173,18 +163,28 @@ func pipeline(ctx context.Context, cmd *args.Command, rep *reporter) error {
 	}
 
 	rep.progress("Resolving links (4/6)")
-	rep.progress("Loading headers and footers (5/6)")
-	rep.progress("Printing pages (6/6)")
 
-	inputs := make([][]byte, 0, n)
-	for _, pdf := range pdfs {
-		inputs = append(inputs, pdf)
+	// Every object's page count is needed to map object-local pages to
+	// final document page numbers for continuous header/footer numbering.
+	for i := range cmd.Objects {
+		if counts[i] == 0 {
+			if counts[i], err = pdfops.PageCount(pdfs[i]); err != nil {
+				return fmt.Errorf("counting pages of %s: %w", cmd.Objects[i].Options().Input, err)
+			}
+		}
 	}
-	out, err := pdfops.Merge(inputs, true)
+
+	out, err := pdfops.Merge(pdfs, true)
 	if err != nil {
 		return fmt.Errorf("merging objects: %w", err)
 	}
 
+	rep.progress("Loading headers and footers (5/6)")
+	if out, err = compositeHeadersFooters(ctx, chromePath, cmd, lay, out, counts, rep); err != nil {
+		return fmt.Errorf("compositing headers and footers: %w", err)
+	}
+
+	rep.progress("Printing pages (6/6)")
 	if out, err = pdfops.SetMetadata(out, g.Title, producerName); err != nil {
 		return fmt.Errorf("setting metadata: %w", err)
 	}
@@ -204,116 +204,194 @@ func pipeline(ctx context.Context, cmd *args.Command, rep *reporter) error {
 	return nil
 }
 
-// renderObject prints one page or cover object to PDF bytes with its
-// header/footer templates and spacing-adjusted margins.
+// renderObject prints one page or cover object to content-only PDF bytes.
+// Headers and footers are composited separately (compositeObject), matching
+// wkhtmltopdf: they are full pages rendered by the same engine and laid over
+// the content, not Chromium's cramped native template mechanism.
 func renderObject(ctx context.Context, chromePath string, g args.GlobalOptions, lay layout, obj args.Object, hasTOC bool, rep *reporter) ([]byte, error) {
 	p := obj.Options()
-	var header, footer string
-	var err error
-	if obj.Kind() != "cover" { // covers never carry headers/footers
-		if header, err = buildHF(p.Header, true, g, p, rep); err != nil {
-			return nil, err
-		}
-		if footer, err = buildHF(p.Footer, false, g, p, rep); err != nil {
-			return nil, err
-		}
-	}
-	req := printRequest(chromePath, g, lay, *p, header, footer)
+	req := printRequest(chromePath, g, lay, *p)
 	req.GenerateOutline = (g.Outline || hasTOC) && p.IncludeInOutline
 	req.Warn = rep.notice
-	pdf, err := chrome.PrintPDF(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-	return pdf, nil
+	return chrome.PrintPDF(ctx, req)
 }
 
-// pageVarRe detects per-object page numbering in header/footer settings:
-// the [page]-family variables or their substitution classes in HTML files.
-var pageVarRe = regexp.MustCompile(`(?i)\[(page|topage|frompage)\]|class\s*=\s*['"][^'"]*\b(page|topage|frompage|pagenumber|totalpages)\b`)
+// compositeHeadersFooters overlays each object's header and footer onto
+// the merged document. Following wkhtmltopdf, every header/footer is a full
+// page rendered by the same engine and laid over the content; page numbers
+// ([page]/[topage]/[frompage]) resolve to literal values against the final,
+// continuously-numbered document. Covers carry no header/footer.
+func compositeHeadersFooters(ctx context.Context, chromePath string, cmd *args.Command, lay layout, merged []byte, counts []int, rep *reporter) ([]byte, error) {
+	g := cmd.Global
+	total, err := pdfops.PageCount(merged)
+	if err != nil {
+		return nil, fmt.Errorf("counting merged pages: %w", err)
+	}
+	geo := geometry(lay)
 
-// usesPageNumbering reports whether any non-cover object's header or
-// footer references page numbers ([page]/[topage]/[frompage]).
-func usesPageNumbering(objs []args.Object) bool {
-	for _, obj := range objs {
-		if obj.Kind() == "cover" { // covers carry no headers/footers
+	headerStamps := map[int][]byte{}
+	footerStamps := map[int][]byte{}
+	cache := map[string][]byte{} // substituted HTML -> rendered stamp PDF
+
+	start := 1
+	for i, obj := range cmd.Objects {
+		count := counts[i]
+		if obj.Kind() == "cover" { // covers never carry headers/footers
+			start += count
 			continue
 		}
 		p := obj.Options()
-		for _, hf := range []args.HeaderFooter{p.Header, p.Footer} {
-			if pageVarRe.MatchString(hf.Left + " " + hf.Center + " " + hf.Right) {
-				return true
+		for local := 0; local < count; local++ {
+			finalPage := start + local
+			vars := hf.PageVars{
+				Page:     finalPage + g.PageOffset,
+				Topage:   total,
+				Frompage: start + g.PageOffset,
 			}
-			if hf.HTMLPath == "" {
-				continue
+			if err := stampSide(ctx, chromePath, g, geo, lay, p, p.Header, true, vars, finalPage, headerStamps, cache, rep); err != nil {
+				return nil, err
 			}
-			// Unreadable files fail loudly later; skip them here.
-			if raw, err := os.ReadFile(hf.HTMLPath); err == nil && pageVarRe.Match(raw) {
-				return true
+			if err := stampSide(ctx, chromePath, g, geo, lay, p, p.Footer, false, vars, finalPage, footerStamps, cache, rep); err != nil {
+				return nil, err
 			}
 		}
+		start += count
 	}
-	return false
+
+	if merged, err = pdfops.OverlayFullPage(merged, headerStamps); err != nil {
+		return nil, err
+	}
+	return pdfops.OverlayFullPage(merged, footerStamps)
 }
 
-// printRequest assembles the chrome.PrintRequest for one object,
-// folding header/footer spacing into the top/bottom margins.
-func printRequest(chromePath string, g args.GlobalOptions, lay layout, p args.PageOptions, header, footer string) chrome.PrintRequest {
-	mt, mb := lay.marginT, lay.marginB
-	if header != "" {
-		mt += p.Header.Spacing / 25.4
+// stampSide renders one page's header or footer (if configured) and records
+// the stamp for finalPage, reusing a cached render for identical content.
+func stampSide(ctx context.Context, chromePath string, g args.GlobalOptions, geo hf.Geometry, lay layout, p *args.PageOptions, set args.HeaderFooter, isHeader bool, vars hf.PageVars, finalPage int, stamps map[int][]byte, cache map[string][]byte, rep *reporter) error {
+	html, warns, err := hfHTML(set, isHeader, g, p, geo, vars)
+	if err != nil {
+		return err
 	}
-	if footer != "" {
-		mb += p.Footer.Spacing / 25.4
+	for _, w := range warns {
+		if err := rep.warn(w); err != nil {
+			return err
+		}
 	}
+	if html == "" {
+		return nil
+	}
+	if stamp, ok := cache[html]; ok {
+		stamps[finalPage] = stamp
+		return nil
+	}
+	stamp, err := renderHFPage(ctx, chromePath, lay, p, set.HTMLPath, html, rep)
+	if err != nil {
+		return err
+	}
+	cache[html] = stamp
+	stamps[finalPage] = stamp
+	return nil
+}
+
+// hfHTML returns the full-page HTML for one header/footer on one page: the
+// substituted --header-html file, or a generated left/center/right bar.
+// Returns "" when nothing is configured.
+func hfHTML(set args.HeaderFooter, isHeader bool, g args.GlobalOptions, p *args.PageOptions, geo hf.Geometry, vars hf.PageVars) (string, []string, error) {
+	if set.HTMLPath != "" {
+		raw, err := os.ReadFile(set.HTMLPath)
+		if err != nil {
+			return "", nil, fmt.Errorf("reading %s: %w", set.HTMLPath, err)
+		}
+		html, warns := hf.SubstituteHTML(string(raw), vars, g.Title, p.Replacements)
+		return html, warns, nil
+	}
+	if set.Left == "" && set.Center == "" && set.Right == "" && !set.Line {
+		return "", nil, nil
+	}
+	html, warns := hf.BuildPage(hf.HFOptions{
+		HF:           set,
+		IsHeader:     isHeader,
+		Title:        g.Title,
+		PageOffset:   g.PageOffset,
+		Replacements: p.Replacements,
+	}, vars, geo)
+	return html, warns, nil
+}
+
+// renderHFPage renders a header/footer HTML document to a full-page,
+// zero-margin PDF for compositing. When the content came from a
+// --header-html/--footer-html file, the temp file is written beside the
+// original so its relative resources still resolve; generated bars carry no
+// relative resources and go to the system temp dir.
+func renderHFPage(ctx context.Context, chromePath string, lay layout, p *args.PageOptions, srcPath, html string, rep *reporter) ([]byte, error) {
+	dir := ""
+	if srcPath != "" {
+		dir = filepath.Dir(srcPath)
+	}
+	tmp, err := os.CreateTemp(dir, "bilihtmltopdf-hf-*.html")
+	if err != nil {
+		return nil, fmt.Errorf("creating header/footer temp file: %w", err)
+	}
+	defer os.Remove(tmp.Name())
+	// The header/footer page is composited over the content, so its own
+	// page background must be transparent (a stylesheet like Bootstrap
+	// paints body white, which would white out the content). Only the
+	// header/footer's own elements should paint. Appended last so it wins.
+	html += `<style>html,body{background:transparent !important;}</style>`
+	if _, err := tmp.WriteString(html); err != nil {
+		tmp.Close()
+		return nil, fmt.Errorf("writing header/footer temp file: %w", err)
+	}
+	tmp.Close()
+
+	hp := *p // inherit cookies/headers/auth/media so footer CSS loads identically
+	hp.Input = tmp.Name()
+	req := chrome.PrintRequest{
+		ChromePath:  chromePath,
+		Page:        hp,
+		Landscape:   lay.landscape,
+		PaperWidth:  lay.paperW,
+		PaperHeight: lay.paperH,
+		// Zero margins so the page's own absolute positioning (bottom:0,
+		// top:0) lands the header/footer at the paper edges, matching how
+		// wkhtmltopdf rendered the header/footer as its own full page.
+		Scale:           p.Zoom,
+		PrintBackground: p.Background,
+		Warn:            rep.notice,
+	}
+	return chrome.PrintPDF(ctx, req)
+}
+
+// geometry converts the inch-based layout into the millimeter geometry the
+// hf package lays generated header/footer bars against.
+func geometry(lay layout) hf.Geometry {
+	return hf.Geometry{
+		PaperWmm:  lay.paperW * 25.4,
+		PaperHmm:  lay.paperH * 25.4,
+		MarginLmm: lay.marginL * 25.4,
+		MarginRmm: lay.marginR * 25.4,
+		MarginTmm: lay.marginT * 25.4,
+		MarginBmm: lay.marginB * 25.4,
+	}
+}
+
+// printRequest assembles the content-only chrome.PrintRequest for one
+// object. Header/footer geometry is handled by the compositing pass; the
+// configured margins reserve the band they occupy (as in wkhtmltopdf,
+// where --margin-top/bottom make room for the header/footer).
+func printRequest(chromePath string, g args.GlobalOptions, lay layout, p args.PageOptions) chrome.PrintRequest {
 	return chrome.PrintRequest{
 		ChromePath:      chromePath,
 		Page:            p,
 		Landscape:       lay.landscape,
 		PaperWidth:      lay.paperW,
 		PaperHeight:     lay.paperH,
-		MarginTop:       mt,
-		MarginBottom:    mb,
+		MarginTop:       lay.marginT,
+		MarginBottom:    lay.marginB,
 		MarginLeft:      lay.marginL,
 		MarginRight:     lay.marginR,
 		Scale:           p.Zoom,
-		HeaderTemplate:  header,
-		FooterTemplate:  footer,
 		PrintBackground: p.Background,
 	}
-}
-
-// buildHF returns the CDP template for one header or footer: either the
-// translated --header-html file or the generated left/center/right one.
-func buildHF(set args.HeaderFooter, isHeader bool, g args.GlobalOptions, p *args.PageOptions, rep *reporter) (string, error) {
-	if set.HTMLPath != "" {
-		tpl, warns, err := hf.TranslateHTMLFile(set.HTMLPath)
-		if err != nil {
-			return "", err
-		}
-		for _, w := range warns {
-			if err := rep.warn(w); err != nil {
-				return "", err
-			}
-		}
-		return tpl, nil
-	}
-	tpl, warns, err := hf.BuildTemplate(hf.HFOptions{
-		HF:           set,
-		IsHeader:     isHeader,
-		Title:        g.Title,
-		PageOffset:   g.PageOffset,
-		Replacements: p.Replacements,
-	})
-	if err != nil {
-		return "", err
-	}
-	for _, w := range warns {
-		if err := rep.warn(w); err != nil {
-			return "", err
-		}
-	}
-	return tpl, nil
 }
 
 // renderTOCs renders every toc object, iterating until each TOC's own
@@ -396,15 +474,7 @@ func renderTOCHTML(ctx context.Context, chromePath string, g args.GlobalOptions,
 
 	p := tocObj.Page
 	p.Input = tmp.Name()
-	header, err := buildHF(p.Header, true, g, &p, rep)
-	if err != nil {
-		return nil, err
-	}
-	footer, err := buildHF(p.Footer, false, g, &p, rep)
-	if err != nil {
-		return nil, err
-	}
-	req := printRequest(chromePath, g, lay, p, header, footer)
+	req := printRequest(chromePath, g, lay, p)
 	req.GenerateOutline = g.Outline
 	req.Warn = rep.notice
 	return chrome.PrintPDF(ctx, req)

@@ -333,3 +333,33 @@ func PageCount(pdf []byte) (int, error) {
 	}
 	return n, nil
 }
+
+// OverlayFullPage stamps each stamp PDF onto its content page at 1:1
+// scale, centered, no rotation — reproducing wkhtmltopdf's header/footer
+// compositing, where the header/footer is a full page rendered by the
+// same engine and laid over the content. stampByPage maps a 1-based
+// content page number to the single-page stamp PDF to overlay; pages
+// absent from the map are left unchanged. The stamp pages must share the
+// content's paper size, and be transparent outside their drawn content
+// so the body shows through.
+func OverlayFullPage(content []byte, stampByPage map[int][]byte) ([]byte, error) {
+	if len(stampByPage) == 0 {
+		return content, nil
+	}
+	wms := make(map[int]*model.Watermark, len(stampByPage))
+	for pageNr, stamp := range stampByPage {
+		// onTop=true stamps over the content (a footer/header layer);
+		// scale:1 abs keeps the stamp page at its native size.
+		wm, err := api.PDFWatermarkForReadSeeker(bytes.NewReader(stamp), 1,
+			"scale:1 abs, pos:c, rot:0", true, false, types.POINTS)
+		if err != nil {
+			return nil, fmt.Errorf("pdfops: overlay: page %d: %w", pageNr, err)
+		}
+		wms[pageNr] = wm
+	}
+	var buf bytes.Buffer
+	if err := api.AddWatermarksMap(bytes.NewReader(content), &buf, wms, newConf()); err != nil {
+		return nil, fmt.Errorf("pdfops: overlay: %w", err)
+	}
+	return buf.Bytes(), nil
+}
