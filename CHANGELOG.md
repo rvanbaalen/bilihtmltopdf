@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.5.0](https://github.com/rvanbaalen/bilihtmltopdf/compare/v0.4.1...v0.5.0) (2026-08-09)
+
+
+### Features
+
+* **setup:** intelligent same-version handling ([da80ca8](https://github.com/rvanbaalen/bilihtmltopdf/commit/da80ca8e1990c86df2189809a14f90f6773094eb))
+* **setup:** show download and installed size in the install plan ([4a29022](https://github.com/rvanbaalen/bilihtmltopdf/commit/4a29022d9e76cd1fcf2a90c1ded9245dd5369658))
+
 ## [0.4.1](https://github.com/rvanbaalen/bilihtmltopdf/compare/v0.4.0...v0.4.1) (2026-08-09)
 
 
