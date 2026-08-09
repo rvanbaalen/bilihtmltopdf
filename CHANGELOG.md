@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/rvanbaalen/bilihtmltopdf/compare/v0.4.0...v0.4.1) (2026-08-09)
+
+
+### Bug Fixes
+
+* place composited headers/footers in the content-area margin ([0d28da3](https://github.com/rvanbaalen/bilihtmltopdf/commit/0d28da364258b616d87f2e380ff9b8008f281cea))
+
 ## [0.4.0](https://github.com/rvanbaalen/bilihtmltopdf/compare/v0.3.0...v0.4.0) (2026-08-09)
 
 
