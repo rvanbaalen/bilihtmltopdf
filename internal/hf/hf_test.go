@@ -14,11 +14,9 @@ func footerOpts(left, center, right string) HFOptions {
 	return HFOptions{HF: hf, IsHeader: false}
 }
 
-var geo = Geometry{PaperWmm: 210, PaperHmm: 297, MarginLmm: 10, MarginRmm: 10, MarginTmm: 10, MarginBmm: 10}
-
 // TestBuildPageEmpty returns no HTML when nothing is configured.
 func TestBuildPageEmpty(t *testing.T) {
-	html, _ := BuildPage(footerOpts("", "", ""), PageVars{Page: 1, Topage: 1}, geo)
+	html, _ := BuildPage(footerOpts("", "", ""), PageVars{Page: 1, Topage: 1})
 	// An all-empty bar still renders (blank spans); assert it is at least
 	// a full document, not a template fragment.
 	if !strings.Contains(html, "<html>") {
@@ -29,7 +27,7 @@ func TestBuildPageEmpty(t *testing.T) {
 // TestBuildPageLiteralPageNumbers bakes literal page numbers per page.
 func TestBuildPageLiteralPageNumbers(t *testing.T) {
 	html, warns := BuildPage(footerOpts("", "[page] of [topage]", ""),
-		PageVars{Page: 3, Topage: 7, Frompage: 1}, geo)
+		PageVars{Page: 3, Topage: 7, Frompage: 1})
 	if len(warns) != 0 {
 		t.Errorf("unexpected warnings: %v", warns)
 	}
@@ -48,7 +46,7 @@ func TestBuildPageLineAndFont(t *testing.T) {
 	opts.HF.Line = true
 	opts.HF.FontName = "Helvetica"
 	opts.HF.FontSize = 9
-	html, _ := BuildPage(opts, PageVars{Page: 1, Topage: 1}, geo)
+	html, _ := BuildPage(opts, PageVars{Page: 1, Topage: 1})
 	if !strings.Contains(html, "border-top:1px solid #000") {
 		t.Errorf("footer line missing:\n%s", html)
 	}
@@ -62,7 +60,7 @@ func TestBuildPageEscapesAndReplaces(t *testing.T) {
 	opts := footerOpts("<b>[co]</b>", "[title]", "")
 	opts.Title = "A & B"
 	opts.Replacements = map[string]string{"co": "Acme <Ltd>"}
-	html, _ := BuildPage(opts, PageVars{Page: 1, Topage: 1}, geo)
+	html, _ := BuildPage(opts, PageVars{Page: 1, Topage: 1})
 	if strings.Contains(html, "<b>") {
 		t.Errorf("user angle brackets must be escaped:\n%s", html)
 	}
@@ -73,7 +71,7 @@ func TestBuildPageEscapesAndReplaces(t *testing.T) {
 
 // TestBuildPageUnsupportedVarsWarn warns and blanks [section] etc.
 func TestBuildPageUnsupportedVarsWarn(t *testing.T) {
-	html, warns := BuildPage(footerOpts("[section]", "", ""), PageVars{Page: 1, Topage: 1}, geo)
+	html, warns := BuildPage(footerOpts("[section]", "", ""), PageVars{Page: 1, Topage: 1})
 	found := false
 	for _, w := range warns {
 		if strings.Contains(w, "[section]") {

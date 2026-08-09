@@ -227,8 +227,6 @@ func compositeHeadersFooters(ctx context.Context, chromePath string, cmd *args.C
 	if err != nil {
 		return nil, fmt.Errorf("counting merged pages: %w", err)
 	}
-	geo := geometry(lay)
-
 	headerStamps := map[int][]byte{}
 	footerStamps := map[int][]byte{}
 	cache := map[string][]byte{} // substituted HTML -> rendered stamp PDF
@@ -248,10 +246,10 @@ func compositeHeadersFooters(ctx context.Context, chromePath string, cmd *args.C
 				Topage:   total,
 				Frompage: start + g.PageOffset,
 			}
-			if err := stampSide(ctx, chromePath, g, geo, lay, p, p.Header, true, vars, finalPage, headerStamps, cache, rep); err != nil {
+			if err := stampSide(ctx, chromePath, g, lay, p, p.Header, true, vars, finalPage, headerStamps, cache, rep); err != nil {
 				return nil, err
 			}
-			if err := stampSide(ctx, chromePath, g, geo, lay, p, p.Footer, false, vars, finalPage, footerStamps, cache, rep); err != nil {
+			if err := stampSide(ctx, chromePath, g, lay, p, p.Footer, false, vars, finalPage, footerStamps, cache, rep); err != nil {
 				return nil, err
 			}
 		}
@@ -266,8 +264,8 @@ func compositeHeadersFooters(ctx context.Context, chromePath string, cmd *args.C
 
 // stampSide renders one page's header or footer (if configured) and records
 // the stamp for finalPage, reusing a cached render for identical content.
-func stampSide(ctx context.Context, chromePath string, g args.GlobalOptions, geo hf.Geometry, lay layout, p *args.PageOptions, set args.HeaderFooter, isHeader bool, vars hf.PageVars, finalPage int, stamps map[int][]byte, cache map[string][]byte, rep *reporter) error {
-	html, warns, err := hfHTML(set, isHeader, g, p, geo, vars)
+func stampSide(ctx context.Context, chromePath string, g args.GlobalOptions, lay layout, p *args.PageOptions, set args.HeaderFooter, isHeader bool, vars hf.PageVars, finalPage int, stamps map[int][]byte, cache map[string][]byte, rep *reporter) error {
+	html, warns, err := hfHTML(set, isHeader, g, p, vars)
 	if err != nil {
 		return err
 	}
@@ -295,7 +293,7 @@ func stampSide(ctx context.Context, chromePath string, g args.GlobalOptions, geo
 // hfHTML returns the full-page HTML for one header/footer on one page: the
 // substituted --header-html file, or a generated left/center/right bar.
 // Returns "" when nothing is configured.
-func hfHTML(set args.HeaderFooter, isHeader bool, g args.GlobalOptions, p *args.PageOptions, geo hf.Geometry, vars hf.PageVars) (string, []string, error) {
+func hfHTML(set args.HeaderFooter, isHeader bool, g args.GlobalOptions, p *args.PageOptions, vars hf.PageVars) (string, []string, error) {
 	if set.HTMLPath != "" {
 		raw, err := os.ReadFile(set.HTMLPath)
 		if err != nil {
@@ -313,7 +311,7 @@ func hfHTML(set args.HeaderFooter, isHeader bool, g args.GlobalOptions, p *args.
 		Title:        g.Title,
 		PageOffset:   g.PageOffset,
 		Replacements: p.Replacements,
-	}, vars, geo)
+	}, vars)
 	return html, warns, nil
 }
 
@@ -351,27 +349,20 @@ func renderHFPage(ctx context.Context, chromePath string, lay layout, p *args.Pa
 		Landscape:   lay.landscape,
 		PaperWidth:  lay.paperW,
 		PaperHeight: lay.paperH,
-		// Zero margins so the page's own absolute positioning (bottom:0,
-		// top:0) lands the header/footer at the paper edges, matching how
-		// wkhtmltopdf rendered the header/footer as its own full page.
+		// Render with the content's own margins so the header/footer's
+		// absolute positioning (top:0 / bottom:0) lands at the edges of the
+		// content area — where wkhtmltopdf placed its separately-rendered
+		// header/footer, just outside the body text — rather than at the
+		// paper edge.
+		MarginTop:       lay.marginT,
+		MarginBottom:    lay.marginB,
+		MarginLeft:      lay.marginL,
+		MarginRight:     lay.marginR,
 		Scale:           p.Zoom,
 		PrintBackground: p.Background,
 		Warn:            rep.notice,
 	}
 	return chrome.PrintPDF(ctx, req)
-}
-
-// geometry converts the inch-based layout into the millimeter geometry the
-// hf package lays generated header/footer bars against.
-func geometry(lay layout) hf.Geometry {
-	return hf.Geometry{
-		PaperWmm:  lay.paperW * 25.4,
-		PaperHmm:  lay.paperH * 25.4,
-		MarginLmm: lay.marginL * 25.4,
-		MarginRmm: lay.marginR * 25.4,
-		MarginTmm: lay.marginT * 25.4,
-		MarginBmm: lay.marginB * 25.4,
-	}
 }
 
 // printRequest assembles the content-only chrome.PrintRequest for one

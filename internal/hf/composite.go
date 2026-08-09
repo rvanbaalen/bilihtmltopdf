@@ -20,15 +20,6 @@ type PageVars struct {
 	Frompage int
 }
 
-// Geometry describes the paper and margins the composite header/footer
-// page is laid out against (all millimeters), so generated bars align
-// horizontally with the content body and sit in the margin band.
-type Geometry struct {
-	PaperWmm, PaperHmm   float64
-	MarginLmm, MarginRmm float64
-	MarginTmm, MarginBmm float64
-}
-
 // litSubster substitutes wkhtmltopdf [variables] with literal values for
 // one specific page, accumulating warnings for unsupported variables. When
 // escape is set, substituted values are HTML-escaped — used for generated
@@ -118,11 +109,12 @@ func HasPageVars(text string) bool { return hasPageVars(text) }
 var pageVarLitRe = regexp.MustCompile(`(?i)\[(page|topage|frompage)\]`)
 
 // BuildPage renders a full-page HTML document for a generated
-// (--header-left/center/right) header or footer, positioned in the top or
-// bottom margin band and aligned horizontally with the content body. It is
-// rendered at full paper size with no margins and composited over each
-// content page, replacing Chromium's cramped native template mechanism.
-func BuildPage(opts HFOptions, vars PageVars, geo Geometry) (string, []string) {
+// (--header-left/center/right) header or footer. The page is rendered with
+// the content's margins, so the bar's absolute positioning aligns with the
+// content area: left/right at the content edges, top/bottom at the top or
+// bottom of the body. It is composited over each content page, replacing
+// Chromium's cramped native template mechanism.
+func BuildPage(opts HFOptions, vars PageVars) (string, []string) {
 	h := opts.HF
 	s := &litSubster{vars: vars, title: opts.Title, repl: opts.Replacements, escape: true}
 	left := s.substitute(stdhtml.EscapeString(h.Left))
@@ -139,7 +131,8 @@ func BuildPage(opts HFOptions, vars PageVars, geo Geometry) (string, []string) {
 		size = 12
 	}
 
-	// The bar occupies the margin band and pads to the content edges.
+	// The bar spans the content width (left/right:0 of the content area) and
+	// sits at the top or bottom edge, offset by --*-spacing.
 	var vpos, line string
 	if opts.IsHeader {
 		vpos = fmt.Sprintf("top:%.3fmm;", h.Spacing)
@@ -155,14 +148,14 @@ func BuildPage(opts HFOptions, vars PageVars, geo Geometry) (string, []string) {
 
 	page := fmt.Sprintf(`<!doctype html><html><head><meta charset="utf-8">`+
 		`<style>html,body{margin:0;padding:0;}`+
-		`.__hf_bar{position:absolute;left:%.3fmm;right:%.3fmm;%s`+
+		`.__hf_bar{position:absolute;left:0;right:0;%s`+
 		`font-family:'%s',sans-serif;font-size:%dpt;display:flex;`+
 		`justify-content:space-between;align-items:baseline;%s}`+
 		`.__hf_bar>span{flex:1;}.__hf_c{text-align:center;}.__hf_r{text-align:right;}`+
 		`</style></head><body>`+
 		`<div class="__hf_bar"><span>%s</span><span class="__hf_c">%s</span>`+
 		`<span class="__hf_r">%s</span></div></body></html>`,
-		geo.MarginLmm, geo.MarginRmm, vpos, font, size, line, left, center, right)
+		vpos, font, size, line, left, center, right)
 
 	return page, s.warnings
 }
