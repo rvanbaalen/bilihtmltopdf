@@ -80,18 +80,28 @@ ASSET_URL="https://github.com/$REPO/releases/download/v$VERSION/$ASSET"
 
 # A release exists the moment it is tagged, but its artifacts upload a
 # few minutes later; fail that window with a clear message instead of a
-# curl 404 halfway through the install.
-if ! curl -fsIL -o /dev/null "$ASSET_URL"; then
-  die "release v$VERSION exists but $ASSET is not downloadable (yet).
+# curl 404 halfway through the install. The same HEAD request that
+# validates availability also yields the download size (Content-Length of
+# the final CDN response, after redirects).
+HEADERS="$(curl -fsIL "$ASSET_URL" 2>/dev/null)" || die \
+  "release v$VERSION exists but $ASSET is not downloadable (yet).
 Artifacts are usually still uploading right after a release — retry in a
 few minutes, or pin the previous version: BILI_VERSION=<x.y.z> $0"
+
+# Last Content-Length across redirect hops = the archive's byte size.
+DL_BYTES="$(printf '%s' "$HEADERS" | tr 'A-Z' 'a-z' |
+  awk '/^content-length:/{v=$2} END{gsub(/\r/,"",v); print v}')"
+DL_SIZE="unknown"
+if [[ "$DL_BYTES" =~ ^[0-9]+$ ]]; then
+  DL_SIZE="$(( (DL_BYTES + 524288) / 1048576 )) MB compressed"
 fi
 
 say "Install plan"
 info "Detected platform : $GOOS/$GOARCH"
 info "Version to install: $VERSION"
 info "Download          : https://github.com/$REPO/releases/download/v$VERSION/$ASSET"
-info "Install directory : $DEST"
+info "Download size     : $DL_SIZE"
+info "Install directory : $DEST (bundles a headless Chromium; expands to ~2-3x the download)"
 info "Command symlink   : $BIN_LINK -> $DEST/wkhtmltopdf"
 if [[ "$GOOS/$GOARCH" == "darwin/amd64" ]]; then
   info "Note: darwin/amd64 archives are not published; Apple Silicon only."
@@ -199,6 +209,8 @@ fi
 
 say "Done"
 info "Installed : $INSTALLED"
+DISK_SIZE="$(du -sh "$DEST" 2>/dev/null | cut -f1)"
+[[ -n "$DISK_SIZE" ]] && info "On disk   : $DISK_SIZE at $DEST"
 info "Uninstall : sudo rm $BIN_LINK && sudo rm -rf $DEST"
 if [[ -e "$BIN_LINK.orig" ]]; then
   info "Rollback  : sudo rm $BIN_LINK && sudo mv $BIN_LINK.orig $BIN_LINK"
