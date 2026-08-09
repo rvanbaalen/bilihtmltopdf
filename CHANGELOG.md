@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.4.0](https://github.com/rvanbaalen/bilihtmltopdf/compare/v0.3.0...v0.4.0) (2026-08-09)
+
+
+### Features
+
+* composite headers/footers as full-page overlays like wkhtmltopdf ([9d80def](https://github.com/rvanbaalen/bilihtmltopdf/commit/9d80defd5296629a2832f1600e1338102259008d))
+* interactive uninstaller and installer hardening ([54477ee](https://github.com/rvanbaalen/bilihtmltopdf/commit/54477eee638164480696b2fe7ed7eace7776158f))
+
 ## [0.3.0](https://github.com/rvanbaalen/bilihtmltopdf/compare/v0.2.0...v0.3.0) (2026-08-08)
 
 
